@@ -6,21 +6,21 @@ const htmlPath = resolve(projectRoot, 'src/email-responsive.html');
 const imagePath = resolve(projectRoot, 'assets/images/baner600x95_3.jpg');
 const outputPath = resolve(projectRoot, 'dist/powerhv-introduction.eml');
 const boundary = '----=_PowerHV_Email_20260907';
-const imageReference = '../assets/images/baner600x95_3.jpg';
 const imageContentId = 'powerhv-banner';
+
+// Self-contained email generation rule:
+// the HTML source should point to a Content-ID image and the .eml
+// must carry the JPEG inline, so the shipped EML is self-contained.
 
 const wrapBase64 = (value) => Buffer.from(value, 'utf8').toString('base64').match(/.{1,76}/g).join('\r\n');
 const wrapBytes = (value) => value.toString('base64').match(/.{1,76}/g).join('\r\n');
 
 const sourceHtml = readFileSync(htmlPath, 'utf8');
-if (!sourceHtml.includes(imageReference)) {
-  throw new Error(`Image reference not found in ${htmlPath}: ${imageReference}`);
+if (!sourceHtml.includes(`src="cid:${imageContentId}"`)) {
+  throw new Error(`Image content-id reference not found in ${htmlPath}: cid:${imageContentId}`);
 }
 
-// Embed the local JPEG as an image MIME part and rewrite the HTML image
-// reference to a Content-ID reference. The resulting .eml remains fully
-// self-contained and does not depend on an external public URL.
-const html = sourceHtml.replace(imageReference, `cid:${imageContentId}`);
+const html = sourceHtml;
 const image = readFileSync(imagePath);
 const subject = Buffer.from('Высоковольтные испытательные и измерительные системы PowerHV', 'utf8').toString('base64');
 

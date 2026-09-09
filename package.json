@@ -1,0 +1,10 @@
+{
+  "name": "powerhv-email-vscode",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "PowerHV self-contained email EML generator.",
+  "scripts": {
+    "build": "node scripts/build-eml.mjs"
+  }
+}
