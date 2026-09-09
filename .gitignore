@@ -1,0 +1,13 @@
+# OS/system files
+.DS_Store
+Thumbs.db
+
+# Dependency and build artifacts
+node_modules/
+dist/
+build/
+*.log
+
+# Editor and local environment
+.vite/
+.cache/
