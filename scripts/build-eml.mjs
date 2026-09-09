@@ -16,6 +16,10 @@ const sourceHtml = readFileSync(htmlPath, 'utf8');
 if (!sourceHtml.includes(imageReference)) {
   throw new Error(`Image reference not found in ${htmlPath}: ${imageReference}`);
 }
+
+// Embed the local JPEG as an image MIME part and rewrite the HTML image
+// reference to a Content-ID reference. The resulting .eml remains fully
+// self-contained and does not depend on an external public URL.
 const html = sourceHtml.replace(imageReference, `cid:${imageContentId}`);
 const image = readFileSync(imagePath);
 const subject = Buffer.from('Высоковольтные испытательные и измерительные системы PowerHV', 'utf8').toString('base64');
