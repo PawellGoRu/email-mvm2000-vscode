@@ -25,6 +25,9 @@ const eml = [
   'From: "МВМ-2000" <mvm-2000@bk.ru>',
   'To:',
   `Subject: =?UTF-8?B?${subject}?=`,
+  // Заголовок отписки обязателен для рассылок; URL подставьте свой.
+  'List-Unsubscribe: <https://www.mvm-2000.ru/unsubscribe>',
+  'List-Unsubscribe-Post: List-Unsubscribe=One-Click',
   'MIME-Version: 1.0',
   `Content-Type: multipart/related; boundary="${boundary}"; type="text/html"`,
   '',
