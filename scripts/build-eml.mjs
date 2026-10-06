@@ -3,22 +3,22 @@ import { resolve } from 'node:path';
 
 const projectRoot = resolve(import.meta.dirname, '..');
 const htmlPath = resolve(projectRoot, 'src/email-responsive.html');
-const outputPath = resolve(projectRoot, 'dist/powerhv-introduction.eml');
+const outputPath = process.argv[2]
+  ? resolve(process.argv[2])
+  : resolve(projectRoot, 'dist/powerhv-introduction.eml');
 const boundary = '----=_PowerHV_Email_20260907';
+const bannerContentId = 'powerhv-banner';
 
-// Self-contained email generation rule:
-// the HTML source is already a full self-contained HTML template with
-// an inlined data:image/jpeg;base64 banner URI. The EML should carry
-// only the HTML content as a MIME part and not generate a separate image part.
-
-const wrapBase64 = (value) => Buffer.from(value, 'utf8').toString('base64').match(/.{1,76}/g).join('\r\n');
+const wrapBase64 = (value) => Buffer.from(value).toString('base64').match(/.{1,76}/g).join('\r\n');
 
 const sourceHtml = readFileSync(htmlPath, 'utf8');
-if (!sourceHtml.includes('data:image/jpeg;base64,')) {
+const bannerMatch = sourceHtml.match(/src="data:image\/jpeg;base64,([^"]+)"/);
+if (!bannerMatch) {
   throw new Error(`Embedded data URI image not found in ${htmlPath}`);
 }
 
-const html = sourceHtml;
+const html = sourceHtml.replace(bannerMatch[0], `src="cid:${bannerContentId}"`);
+const banner = Buffer.from(bannerMatch[1], 'base64');
 const subject = Buffer.from('Высоковольтные испытательные и измерительные системы PowerHV', 'utf8').toString('base64');
 
 const eml = [
@@ -34,9 +34,17 @@ const eml = [
   '',
   wrapBase64(html),
   '',
+  `--${boundary}`,
+  'Content-Type: image/jpeg; name="baner600x95_3.jpg"',
+  'Content-Transfer-Encoding: base64',
+  `Content-ID: <${bannerContentId}>`,
+  'Content-Disposition: inline; filename="baner600x95_3.jpg"',
+  '',
+  wrapBase64(banner),
+  '',
   `--${boundary}--`,
   '',
 ].join('\r\n');
 
-mkdirSync(resolve(projectRoot, 'dist'), { recursive: true });
+mkdirSync(resolve(outputPath, '..'), { recursive: true });
 writeFileSync(outputPath, eml, 'utf8');
