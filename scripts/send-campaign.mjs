@@ -88,7 +88,10 @@ const subjectText = 'Высоковольтные испытательные и 
 
 const buildEml = ({ email, firstName, lastName }) => {
   const boundary = `----=_PowerHV_${slugify(email).replace(/-/g, '_')}`;
+  // В src/email-responsive.html по умолчанию стоит «Сергей Сергеевич»;
+  // при рассылке заменяем обращение на персонализированное.
   const personalized = htmlWithCid
+    .replace('Уважаемый Сергей Сергеевич!', `Уважаемый ${firstName} ${lastName}!`)
     .replaceAll('{{firstName}}', firstName)
     .replaceAll('{{lastName}}', lastName);
   if (/{{\w+}}/.test(personalized)) {

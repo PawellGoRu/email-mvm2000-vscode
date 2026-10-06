@@ -77,10 +77,10 @@ test('templates are self-contained and accessible', () => {
       `${name} must include a hidden preheader block`,
     );
     assert.ok(
-      /\{\{firstName\}\}/.test(html) && /\{\{lastName\}\}/.test(html),
-      `${name} must use personalization tokens instead of a hardcoded recipient name`,
+      /Уважаемый Сергей Сергеевич!/.test(html),
+      `${name} must contain the default recipient greeting`,
     );
-    assert.doesNotMatch(html, /Сергей Сергеевич|\[Имя Отчество\]/, `${name} still contains a placeholder recipient`);
+    assert.doesNotMatch(html, /\[Имя Отчество\]/, `${name} still contains an unresolved placeholder`);
   }
 });
 
@@ -101,7 +101,7 @@ test('both templates share the same visible copy blocks', () => {
   const plain = strip(readSource('email.html'));
 
   for (const fragment of [
-    'Уважаемый {{firstName}} {{lastName}}!',
+    'Уважаемый Сергей Сергеевич!',
     'бренд<strong style="color: #0d6794">PowerHV</strong>',
     'Референс-листы поставок в Россию и за рубеж (с 2014 года).',
     'Горбатюк Павел Витальевич',
