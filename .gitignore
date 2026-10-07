@@ -1,2 +1,2 @@
-# Build artifacts
-dist/
+# Git bundles
+*.bundle
