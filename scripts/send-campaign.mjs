@@ -88,10 +88,10 @@ const subjectText = 'Высоковольтные испытательные и 
 
 const buildEml = ({ email, firstName, lastName }) => {
   const boundary = `----=_PowerHV_${slugify(email).replace(/-/g, '_')}`;
-  // В src/email-responsive.html по умолчанию стоит «Сергей Сергеевич»;
+  // В src/email-responsive.html по умолчанию стоит плейсхолдер «[Имя Отчество]»;
   // при рассылке заменяем обращение на персонализированное.
   const personalized = htmlWithCid
-    .replace('Уважаемый Сергей Сергеевич!', `Уважаемый ${firstName} ${lastName}!`)
+    .replace('[Имя Отчество]', `${firstName} ${lastName}`)
     .replaceAll('{{firstName}}', firstName)
     .replaceAll('{{lastName}}', lastName);
   if (/{{\w+}}/.test(personalized)) {
