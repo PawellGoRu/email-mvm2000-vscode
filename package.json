@@ -5,6 +5,9 @@
   "type": "module",
   "description": "PowerHV self-contained email EML generator.",
   "scripts": {
-    "build": "node scripts/build-eml.mjs"
+    "build": "node scripts/build-eml.mjs",
+    "campaign": "node scripts/send-campaign.mjs recipients.csv",
+    "test": "node --test test/",
+    "mail-template": "node scripts/build-mail-template.mjs"
   }
 }
