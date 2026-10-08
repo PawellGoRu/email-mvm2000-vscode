@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const projectRoot = resolve(import.meta.dirname, '..');
-const htmlPath = resolve(projectRoot, 'src/email-responsive.html');
+const htmlPath = resolve(projectRoot, 'src/email.html');
 const outputPath = process.argv[2]
   ? resolve(process.argv[2])
   : resolve(projectRoot, 'dist/powerhv-introduction.eml');

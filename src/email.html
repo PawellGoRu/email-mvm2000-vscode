@@ -5,7 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="x-apple-disable-message-reformatting" />
     <style>
-      @media screen and (max-width: 100%) {
+      .email-frame img {
+        display: block;
+        width: 100%;
+        max-width: 600px;
+        height: auto;
+        border: 0;
+      }
+
+      @media screen and (max-width: 600px) {
         .email-frame {
           width: 100% !important;
           max-width: 100% !important;
@@ -16,6 +24,7 @@
           width: 100% !important;
           max-width: 100% !important;
           height: auto !important;
+          display: block !important;
         }
 
         .email-content,

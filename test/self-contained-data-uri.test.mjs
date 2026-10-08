@@ -41,7 +41,7 @@ test('build script embeds the banner as an inline related MIME image', () => {
     assert.match(html, /src="cid:powerhv-banner"/);
     assert.doesNotMatch(html, /data:image\/jpeg;base64,/);
 
-    const sourceHtml = readSource('email-responsive.html');
+    const sourceHtml = readSource('email.html');
     const sourceBanner = sourceHtml.match(/src="data:image\/jpeg;base64,([^"]+)"/);
     assert.ok(sourceBanner, 'source banner is missing');
     assert.deepEqual(Buffer.from(imagePart.body, 'base64'), Buffer.from(sourceBanner[1], 'base64'));
