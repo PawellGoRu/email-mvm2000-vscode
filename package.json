@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node scripts/build-eml.mjs",
     "campaign": "node scripts/send-campaign.mjs recipients.csv",
-    "test": "node --test test/",
+    "test": "node --test",
     "mail-template": "node scripts/build-mail-template.mjs"
   }
 }

@@ -6,7 +6,7 @@
 -- переносится целиком, включая баннер (inline-MIME cid:) и подпись.
 --
 -- Использование (в Терминале на Mac, из корня папки проекта):
---   npm run build-eml
+--   npm run build
 --   osascript scripts/build-mail-template.applescript "$(pwd)/dist/powerhv-introduction.eml"
 --
 -- Что происходит:

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -108,5 +108,88 @@ test('both templates share the same visible copy blocks', () => {
   ]) {
     assert.ok(responsive.includes(fragment), `responsive template misses: ${fragment}`);
     assert.ok(plain.includes(fragment), `email.html misses: ${fragment}`);
+  }
+});
+
+test('campaign output uses unique names, escapes HTML, and removes only tracked stale files', () => {
+  const tempDir = mkdtempSync(join(tmpdir(), 'powerhv-campaign-'));
+  const csvPath = join(tempDir, 'recipients.csv');
+  const outputDir = join(tempDir, 'out');
+  const scriptPath = resolve(import.meta.dirname, '../scripts/send-campaign.mjs');
+
+  try {
+    mkdirSync(outputDir, { recursive: true });
+    writeFileSync(join(outputDir, 'legacy-example-com.eml'), 'stale legacy output');
+    writeFileSync(join(outputDir, 'manual.eml'), 'keep manual file');
+    writeFileSync(csvPath, [
+      'email,firstName,lastName',
+      'a.b@example.com,"<Ada & Co>",Lovelace',
+      'a-b@example.com,Other,Person',
+      'юзер@пример.рф,Юзер,Тест',
+    ].join('\n'));
+    execFileSync(process.execPath, [scriptPath, csvPath, outputDir]);
+
+    let outputFiles = readdirSync(outputDir).filter((name) => name.endsWith('.eml'));
+    assert.ok(!outputFiles.includes('legacy-example-com.eml'), 'legacy generated EML should be removed');
+    assert.ok(outputFiles.includes('manual.eml'), 'manual EML should be preserved');
+    const generatedNames = outputFiles.filter((name) => name !== 'manual.eml');
+    assert.equal(generatedNames.length, 3, 'distinct recipients must not collide');
+    assert.ok(generatedNames.every((name) => name !== '.eml'), 'Unicode addresses need a safe filename');
+
+    const emlFiles = generatedNames.map((name) => readFileSync(join(outputDir, name), 'utf8'));
+    const personalizedEml = emlFiles.find((eml) => eml.includes('<a.b@example.com>'));
+    assert.ok(personalizedEml, 'personalized recipient EML is missing');
+    const boundary = personalizedEml.match(/boundary="([^"]+)"/)?.[1];
+    assert.ok(boundary, 'MIME boundary is missing');
+    const parts = personalizedEml.split(`--${boundary}`).slice(1, -1);
+    const htmlPart = parts.find((part) => part.includes('Content-Type: text/html'));
+    const imagePart = parts.find((part) => part.includes('Content-ID: <powerhv-banner>'));
+    assert.ok(htmlPart, 'HTML MIME part is missing');
+    assert.ok(imagePart, 'inline banner MIME part is missing');
+    const htmlBody = htmlPart.slice(htmlPart.indexOf('\r\n\r\n') + 4).replaceAll('\r\n', '');
+    const html = Buffer.from(htmlBody, 'base64').toString('utf8');
+    assert.ok(html.includes('&lt;Ada &amp; Co&gt;'), 'CSV values must be HTML-escaped');
+    assert.ok(html.includes('src="cid:powerhv-banner"'), 'HTML must reference the inline banner');
+
+    writeFileSync(join(outputDir, 'manual.eml'), 'keep this file');
+    writeFileSync(csvPath, 'email,firstName,lastName\na.b@example.com,Ada,Lovelace\n');
+    execFileSync(process.execPath, [scriptPath, csvPath, outputDir]);
+    outputFiles = readdirSync(outputDir).filter((name) => name.endsWith('.eml'));
+    assert.equal(outputFiles.length, 2, 'stale tracked EML should be removed, unrelated EML preserved');
+    assert.ok(outputFiles.includes('manual.eml'));
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('campaign CSV parser supports quoted newlines and rejects malformed or duplicate rows', () => {
+  const tempDir = mkdtempSync(join(tmpdir(), 'powerhv-campaign-csv-'));
+  const csvPath = join(tempDir, 'recipients.csv');
+  const outputDir = join(tempDir, 'out');
+  const scriptPath = resolve(import.meta.dirname, '../scripts/send-campaign.mjs');
+
+  try {
+    writeFileSync(csvPath, 'email,firstName,lastName\r\nperson@example.com,"Ada\r\nLovelace",Byron\r\n');
+    execFileSync(process.execPath, [scriptPath, csvPath, outputDir]);
+    const generatedName = readdirSync(outputDir).find((name) => name.endsWith('.eml'));
+    assert.ok(generatedName, 'campaign EML was not generated');
+    const eml = readFileSync(join(outputDir, generatedName), 'utf8');
+    const boundary = eml.match(/boundary="([^"]+)"/)?.[1];
+    assert.ok(boundary, 'MIME boundary is missing');
+    const htmlPart = eml.split(`--${boundary}`).find((part) => part.includes('Content-Type: text/html'));
+    assert.ok(htmlPart, 'HTML MIME part is missing');
+    const htmlBody = htmlPart.slice(htmlPart.indexOf('\r\n\r\n') + 4).replaceAll('\r\n', '');
+    assert.ok(Buffer.from(htmlBody, 'base64').toString('utf8').includes('Ada\r\nLovelace Byron'));
+
+    writeFileSync(csvPath, 'email,firstName,lastName\nperson@example.com,"Ada,Byron\n');
+    const malformedResult = spawnSync(process.execPath, [scriptPath, csvPath, outputDir], { encoding: 'utf8' });
+    assert.notEqual(malformedResult.status, 0);
+    assert.match(malformedResult.stderr, /unclosed quoted field/);
+    writeFileSync(csvPath, 'email,firstName,lastName\nperson@example.com,Ada,Byron\nperson@example.com,Other,Name\n');
+    const duplicateResult = spawnSync(process.execPath, [scriptPath, csvPath, outputDir], { encoding: 'utf8' });
+    assert.notEqual(duplicateResult.status, 0);
+    assert.match(duplicateResult.stderr, /Duplicate e-mail address/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
   }
 });

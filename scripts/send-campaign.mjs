@@ -1,5 +1,6 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
 
 // Собирает персонализированные .eml из CSV-списка рассылки.
 //
@@ -22,59 +23,115 @@ const outputDir = process.argv[3]
   ? resolve(process.argv[3])
   : resolve(projectRoot, 'dist/campaign');
 
-const parseCsvLine = (line) => {
-  const cells = [];
-  let current = '';
+const parseCsv = (source) => {
+  const rows = [];
+  let row = [];
+  let field = '';
   let inQuotes = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
+  let afterQuote = false;
+
+  const pushField = () => {
+    row.push(field.trim());
+    field = '';
+    afterQuote = false;
+  };
+  const pushRow = () => {
+    pushField();
+    if (row.some((cell) => cell !== '')) rows.push(row);
+    row = [];
+  };
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
     if (inQuotes) {
-      if (ch === '"' && line[i + 1] === '"') {
-        current += '"';
-        i += 1;
-      } else if (ch === '"') {
+      if (character === '"' && source[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else if (character === '"') {
         inQuotes = false;
+        afterQuote = true;
       } else {
-        current += ch;
+        field += character;
+        if (character === '\r' && source[index + 1] === '\n') {
+          field += '\n';
+          index += 1;
+        }
       }
-    } else if (ch === '"') {
+      continue;
+    }
+
+    if (afterQuote) {
+      if (character === ',') {
+        pushField();
+      } else if (character === '\r' || character === '\n') {
+        pushRow();
+        if (character === '\r' && source[index + 1] === '\n') index += 1;
+      } else if (character !== ' ' && character !== '\t') {
+        throw new Error('CSV contains unexpected characters after a quoted field');
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      if (field.trim() !== '') throw new Error('CSV contains a quote inside an unquoted field');
+      field = '';
       inQuotes = true;
-    } else if (ch === ',') {
-      cells.push(current);
-      current = '';
+    } else if (character === ',') {
+      pushField();
+    } else if (character === '\r' || character === '\n') {
+      pushRow();
+      if (character === '\r' && source[index + 1] === '\n') index += 1;
     } else {
-      current += ch;
+      field += character;
     }
   }
-  cells.push(current);
-  return cells.map((cell) => cell.trim());
+
+  if (inQuotes) throw new Error('CSV contains an unclosed quoted field');
+  if (field !== '' || row.length > 0 || afterQuote) pushRow();
+  return rows;
 };
 
 const readRecipients = () => {
-  const lines = readFileSync(csvPath, 'utf8').split(/\r?\n/).filter((l) => l.trim() !== '');
-  if (lines.length < 2) {
+  const rows = parseCsv(readFileSync(csvPath, 'utf8'));
+  if (rows.length < 2) {
     throw new Error(`CSV ${csvPath} must contain a header row and at least one recipient`);
   }
-  const header = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
+  const [headerRow, ...recipientRows] = rows;
+  const header = headerRow.map((name) => name.toLowerCase());
   const idx = {
     email: header.indexOf('email'),
     firstName: header.indexOf('firstname'),
     lastName: header.indexOf('lastname'),
   };
-  for (const [name, pos] of Object.entries(idx)) {
-    if (pos === -1) throw new Error(`CSV header must include column "${name}"`);
+  for (const [name, position] of Object.entries(idx)) {
+    if (position === -1) throw new Error(`CSV header must include column "${name}"`);
   }
-  return lines.slice(1).map((line) => {
-    const cells = parseCsvLine(line);
-    const email = cells[idx.email];
+
+  const seenEmails = new Set();
+  return recipientRows.map((cells, index) => {
+    const email = cells[idx.email] ?? '';
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      throw new Error(`Invalid e-mail address in CSV row: "${line}"`);
+      throw new Error(`Invalid e-mail address in CSV record ${index + 2}: "${email}"`);
     }
+    const duplicateKey = email.toLowerCase();
+    if (seenEmails.has(duplicateKey)) {
+      throw new Error(`Duplicate e-mail address in CSV: "${email}"`);
+    }
+    seenEmails.add(duplicateKey);
     return { email, firstName: cells[idx.firstName] ?? '', lastName: cells[idx.lastName] ?? '' };
   });
 };
 
-const slugify = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+const slugify = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'recipient';
+const escapeHtml = (value) => value.replace(/[&<>"']/g, (character) => ({
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+})[character]);
+const createStableId = (value) => createHash('sha256').update(value.toLowerCase()).digest('hex');
+const fileNameFor = (email) => `${slugify(email).slice(0, 80)}-${createStableId(email)}.eml`;
 const wrapBase64 = (value) => Buffer.from(value).toString('base64').match(/.{1,76}/g).join('\r\n');
 
 const sourceHtml = readFileSync(htmlPath, 'utf8');
@@ -87,13 +144,15 @@ const htmlWithCid = sourceHtml.replace(bannerMatch[0], 'src="cid:powerhv-banner"
 const subjectText = 'Высоковольтные испытательные и измерительные системы PowerHV';
 
 const buildEml = ({ email, firstName, lastName }) => {
-  const boundary = `----=_PowerHV_${slugify(email).replace(/-/g, '_')}`;
+  const boundary = `----=_PowerHV_${createStableId(email)}`;
+  const safeFirstName = escapeHtml(firstName);
+  const safeLastName = escapeHtml(lastName);
   // В src/email-responsive.html по умолчанию стоит плейсхолдер «[Имя Отчество]»;
   // при рассылке заменяем обращение на персонализированное.
   const personalized = htmlWithCid
-    .replace('[Имя Отчество]', `${firstName} ${lastName}`)
-    .replaceAll('{{firstName}}', firstName)
-    .replaceAll('{{lastName}}', lastName);
+    .replace('[Имя Отчество]', `${safeFirstName} ${safeLastName}`)
+    .replaceAll('{{firstName}}', safeFirstName)
+    .replaceAll('{{lastName}}', safeLastName);
   if (/{{\w+}}/.test(personalized)) {
     throw new Error(`Unresolved personalization token remained for ${email}`);
   }
@@ -128,9 +187,41 @@ const buildEml = ({ email, firstName, lastName }) => {
 };
 
 const recipients = readRecipients();
-mkdirSync(outputDir, { recursive: true });
-for (const recipient of recipients) {
-  const fileName = `${slugify(recipient.email)}.eml`;
-  writeFileSync(resolve(outputDir, fileName), buildEml(recipient), 'utf8');
+const generatedFiles = recipients.map((recipient) => ({
+  fileName: fileNameFor(recipient.email),
+  content: buildEml(recipient),
+}));
+const manifestPath = resolve(outputDir, '.campaign-manifest.json');
+let previousFileNames = [];
+if (existsSync(manifestPath)) {
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  } catch {
+    throw new Error(`Campaign manifest is invalid: ${manifestPath}`);
+  }
+  if (!Array.isArray(manifest) || manifest.some((fileName) =>
+    typeof fileName !== 'string' || basename(fileName) !== fileName || !fileName.endsWith('.eml'))
+  ) {
+    throw new Error(`Campaign manifest contains invalid file names: ${manifestPath}`);
+  }
+  previousFileNames = manifest;
+} else if (existsSync(outputDir)) {
+  previousFileNames = readdirSync(outputDir).filter((fileName) =>
+    fileName === '.eml' || /^[a-z0-9]+(?:-[a-z0-9]+){2,}\.eml$/.test(fileName)
+  );
 }
+
+mkdirSync(outputDir, { recursive: true });
+const currentFileNames = new Set(generatedFiles.map(({ fileName }) => fileName));
+for (const fileName of previousFileNames) {
+  if (!currentFileNames.has(fileName)) {
+    const stalePath = resolve(outputDir, fileName);
+    if (existsSync(stalePath)) unlinkSync(stalePath);
+  }
+}
+for (const { fileName, content } of generatedFiles) {
+  writeFileSync(resolve(outputDir, fileName), content, 'utf8');
+}
+writeFileSync(manifestPath, `${JSON.stringify([...currentFileNames], null, 2)}\n`, 'utf8');
 console.log(`Generated ${recipients.length} personalized .eml file(s) in ${outputDir}`);
